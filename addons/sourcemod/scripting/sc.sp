@@ -8,113 +8,131 @@
  */
 
 #pragma semicolon 1
+#pragma newdecls required
+
 #define REQUIRE_PLUGIN
 #include <sourcemod>
 #undef REQUIRE_PLUGIN
 #include <scrontab>
 
 
-public Plugin:ServerCrontab = 
+public Plugin ServerCrontab = 
 {
 	name = "Server Crontab", 
 	author = "dubbeh", 
-	description = "Run specific server commands tasks at certain times", 
+	description = "Run specific server tasks at certain times", 
 	version = SCRONTAB_VERSION, 
-	url = "http://www.yegods.net/"
+	url = "http://dubbeh.net/"
 };
 
-static const String:g_szConfigFile[] = "sourcemod/sc_jobs.cfg";
+char g_szConfigFile[PLATFORM_MAX_PATH] = "sourcemod/sc_jobs.cfg";
 
 
-public OnPluginStart()
+public void OnPluginStart()
 {
 	/* Create the version console variable */
 	CreateConVar("sc_version", SCRONTAB_VERSION, "Server Crontab version", FCVAR_PLUGIN | FCVAR_SPONLY | FCVAR_REPLICATED | FCVAR_NOTIFY);
 	
 	/* Register all the admin commands */
-	RegAdminCmd("sc_addjob", Command_AddCronJob, ADMFLAG_ROOT, "sc_addjob weekday_start weekday_end hour_start hour_end minute_start minute_end \"cronjob\" - Adds a new cronjob");
+	RegAdminCmd("sc_addjob", Command_AddCronJob, ADMFLAG_ROOT, "sc_addjob minute hour day_of_the_month month day_of_the_week \"cronjob\" - Adds a new cronjob");
 	RegAdminCmd("sc_removejob", Command_RemoveCronJob, ADMFLAG_ROOT, "sc_removejob cronjob_id - Removes a job using cronjob_id");
 	RegAdminCmd("sc_removealljobs", Command_RemoveAllCronJobs, ADMFLAG_ROOT, "sc_removealljobs - Removes all crontab jobs");
 	RegAdminCmd("sc_printjobs", Command_PrintCronJobs, ADMFLAG_ROOT, "sc_printjobs - Prints out all the current cron jobs in the console");
 	
-	/* Create the de`conneclayed config execute timer */
+	/* Create the delayed config execute timer */
 	CreateTimer(10.0, OnPluginStart_Delayed);
 }
 
-public Action:OnPluginStart_Delayed(Handle:timer)
+public Action OnPluginStart_Delayed(Handle timer)
 {
 	/* Run delayed startup timer. Thanks to FlyingMongoose/sslice for the idea :) */
 	/* We want to execute the jobs config file here */
 	ServerCommand("exec %s", g_szConfigFile);
+	return Plugin_Stop;
 }
 
-public Action:Command_AddCronJob(client, args)
+public Action Command_AddCronJob(int client, int args)
 {
-	decl String:szTempBuffer[MAX_JOB_LEN] = "";
-	static iJobWeekdayStart = 0, iJobWeekdayEnd = 0, iJobHourStart = 0, iJobHourEnd = 0, iJobMinuteStart = 0, iJobMinuteEnd = 0;
+	static char szTempBuffer[MAX_JOB_LEN] = "";
+	static int iMinute = 0, iHour = 0, iDayOfTheMonth = 0, iMonth = 0, iDayOfTheWeek = 0;
 	
-	if (args == 7)
+	/* Staged the checks to avoid using GetCmdArg multiple times at the start
+	   Using nested Ifs to reduce CPU cycles and reply for invalid input feedback */
+	if (args == 6)
 	{
 		GetCmdArg(1, szTempBuffer, sizeof(szTempBuffer));
-		iJobWeekdayStart = CronStringToInt(szTempBuffer);
-		GetCmdArg(2, szTempBuffer, sizeof(szTempBuffer));
-		iJobWeekdayEnd = CronStringToInt(szTempBuffer);
-		if (SC_IsWeekdayValid(iJobWeekdayStart) && SC_IsWeekdayValid(iJobWeekdayEnd))
+		iMinute = CronStringToInt(szTempBuffer);
+		if (SC_IsMinuteValid(iMinute))
 		{
-			GetCmdArg(3, szTempBuffer, sizeof(szTempBuffer));
-			iJobHourStart = CronStringToInt(szTempBuffer);
-			GetCmdArg(4, szTempBuffer, sizeof(szTempBuffer));
-			iJobHourEnd = CronStringToInt(szTempBuffer);
-			if (SC_IsHourValid(iJobHourStart) && SC_IsHourValid(iJobHourEnd))
+			GetCmdArg(2, szTempBuffer, sizeof(szTempBuffer));
+			iHour = CronStringToInt(szTempBuffer);
+			if (SC_IsHourValid(iHour))
 			{
-				GetCmdArg(5, szTempBuffer, sizeof(szTempBuffer));
-				iJobMinuteStart = CronStringToInt(szTempBuffer);
-				GetCmdArg(6, szTempBuffer, sizeof(szTempBuffer));
-				iJobMinuteEnd = CronStringToInt(szTempBuffer);
-				if (SC_IsMinuteValid(iJobMinuteStart) && SC_IsMinuteValid(iJobMinuteEnd))
+				GetCmdArg(3, szTempBuffer, sizeof(szTempBuffer));
+				iDayOfTheMonth = CronStringToInt(szTempBuffer);
+				if (SC_IsDayOfTheMonthValid(iDayOfTheMonth))
 				{
-					GetCmdArg(7, szTempBuffer, sizeof(szTempBuffer));
-					
-					if ((SC_DoesCronJobExist(iJobWeekdayStart, iJobWeekdayEnd, iJobHourStart, iJobHourEnd, iJobMinuteStart, iJobMinuteEnd, szTempBuffer)) != -1)
-						ReplyToCommand(client, "[SC] Cron job \"%s\" already exists in the jobs array", szTempBuffer);
-					else if ((SC_AddCronJob(iJobWeekdayStart, iJobWeekdayEnd, iJobHourStart, iJobHourEnd, iJobMinuteStart, iJobMinuteEnd, szTempBuffer)) != -1)
-                        ReplyToCommand(client, "[SC] Cron job \"%s\" added successfully", szTempBuffer);
+					GetCmdArg(4, szTempBuffer, sizeof(szTempBuffer));
+					iMonth = CronStringToInt(szTempBuffer);
+					if (SC_IsMonthValid(iMonth))
+					{
+						GetCmdArg(5, szTempBuffer, sizeof(szTempBuffer));
+						iDayOfTheWeek = CronStringToInt(szTempBuffer);
+						if (SC_IsDayOfTheWeekValid(iDayOfTheWeek))
+						{
+							GetCmdArg(6, szTempBuffer, sizeof(szTempBuffer));
+							
+							if ((SC_DoesCronJobExist(iMinute, iHour, iDayOfTheMonth, iMonth, iDayOfTheWeek, szTempBuffer)) != -1)
+								ReplyToCommand(client, "[SC] Cron job \"%s\" already exists in the jobs array", szTempBuffer);
+							else if ((SC_AddCronJob(iMinute, iHour, iDayOfTheMonth, iMonth, iDayOfTheWeek, szTempBuffer)) != -1)
+								ReplyToCommand(client, "[SC] Cron job \"%s\" added successfully", szTempBuffer);
+							else
+								ReplyToCommand(client, "[SC] Unknown error adding \"%s\" to the jobs array", szTempBuffer);
+						}
+						else
+						{
+							ReplyToCommand(client, "[SC] Add job error - Day of the week value is invalid - Minimum 0 (Sunday) - Maximum 6 (Saturday)");
+						}
+					}
 					else
-					    ReplyToCommand(client, "[SC] Unknown error adding \"%s\" to the jobs array", szTempBuffer);
+					{
+						ReplyToCommand(client, "[SC] Add job error - Month value is invalid - Minumum 1 - Maximum 12");
+					}
 				}
 				else
 				{
-					ReplyToCommand(client, "[SC] Add job error - Minute value is invalid");
+					ReplyToCommand(client, "[SC] Add job error - Day of the Month value is invalid - Minumum 1 - Maximum 31");
 				}
 			}
 			else
 			{
-				ReplyToCommand(client, "[SC] Add job error - Hour value is invalid");
+				ReplyToCommand(client, "[SC] Add job error - Hour value is invalid - Maximum value is 23");
 			}
 		}
 		else
 		{
-			ReplyToCommand(client, "[SC] Add job error - Weekday value is invalid");
+			ReplyToCommand(client, "[SC] Add job error - Minute value is invalid - Maximum value is 59");
 		}
 	}
 	else
 	{
 		ReplyToCommand(client, "[SC] sc_addjob - Invalid usage");
-		ReplyToCommand(client, "[SC] Usage: sc_addjob weekday_start weekday_end hour_start hour_end minute_start minute_end \"cronjob\"");
+		ReplyToCommand(client, "[SC] Usage: sc_addjob minute hour day_of_the_month month day_of_the_week \"cronjob\"");
 	}
 	
 	return Plugin_Handled;
 }
 
-public Action:Command_RemoveCronJob(client, args)
+/* Removes a cronjob from the cronjobs array - If the ID is valid */
+public Action Command_RemoveCronJob(int client, int args)
 {
-	decl String:szTempBuffer[8] = "";
+	char szTempBuffer[8] = "";
+	static int iJobId = 0;
 	
 	if (args == 1)
 	{
 		GetCmdArg(1, szTempBuffer, sizeof(szTempBuffer));
-		new iJobId = StringToInt(szTempBuffer);
-		
+		iJobId = StringToInt(szTempBuffer);
 		if (iJobId <= SC_GetNumberOfCronJobs())
 		{
 			SC_RemoveCronJob(iJobId);
@@ -128,52 +146,53 @@ public Action:Command_RemoveCronJob(client, args)
 	else
 	{
 		ReplyToCommand(client, "[SC] sc_removejob - Invalid usage");
-		ReplyToCommand(client, "[SC] Usage: sc_removejob cronjob_id");
+		ReplyToCommand(client, "[SC] Usage: sc_removejob CronjobID");
 	}
 	
 	return Plugin_Handled;
 }
 
-public Action:Command_RemoveAllCronJobs(client, args)
+/* Removes all cronjobs */
+public Action Command_RemoveAllCronJobs(int client, int args)
 {
 	SC_RemoveAllCronJobs();
 	ReplyToCommand(client, "[SC] All cron jobs removed");
 	return Plugin_Handled;
 }
 
-public Action:Command_PrintCronJobs(client, args)
+/* prints all current cronjobs to the console */
+public Action Command_PrintCronJobs(int client, int args)
 {
-	new iNumOfJobs, iJobWeekdayStart, iJobWeekdayEnd, iJobHourStart, iJobHourEnd, iJobMinuteStart, iJobMinuteEnd;
-	decl String:szCronJob[MAX_JOB_LEN], String:szJobWeekdayStart[8], 
-	String:szJobWeekdayEnd[8], String:szJobHourStart[8], String:szJobHourEnd[8], 
-	String:szJobMinuteStart[8], String:szJobMinuteEnd[8];
+	static int iNumOfJobs = 0, iJob = 0, iJobMinute = 0,
+	    iJobHour = 0, iJobDayOfTheMonth = 0, iJobMonth = 0, iJobDayOfTheWeek = 0;
 	
-	ReplyToCommand(client, "Id\tWeekdayStart\tWeekdayEnd\tHourStart\tHourEnd\tMinuteStart\tMinuteEnd\tJob");
+	static char szCronJob[MAX_JOB_LEN], szJobMinute[4], szJobHour[4],
+	    szJobDayOfTheMonth[4], szJobMonth[4], szJobDayOfTheWeek[4];
+	
+	ReplyToCommand(client, "Id\tMinute\tHour\tDayOfTheMonth\tMonth\tDayOfTheWeek\tJob");
 	iNumOfJobs = SC_GetNumberOfCronJobs();
-	for (new i = 0; i <= iNumOfJobs; i++)
+	for (iJob = 0; iJob <= iNumOfJobs; iJob++)
 	{
-		SC_GetCronJobFromId(i, iJobWeekdayStart, iJobWeekdayEnd, iJobHourStart, iJobHourEnd, iJobMinuteStart, iJobMinuteEnd, szCronJob);
-		CronIntToString(iJobWeekdayStart, szJobWeekdayStart, sizeof(szJobWeekdayStart));
-		CronIntToString(iJobWeekdayEnd, szJobWeekdayEnd, sizeof(szJobWeekdayEnd));
-		CronIntToString(iJobHourStart, szJobHourStart, sizeof(szJobHourStart));
-		CronIntToString(iJobHourEnd, szJobHourEnd, sizeof(szJobHourEnd));
-		CronIntToString(iJobMinuteStart, szJobMinuteStart, sizeof(szJobMinuteStart));
-		CronIntToString(iJobMinuteEnd, szJobMinuteEnd, sizeof(szJobMinuteEnd));
-		ReplyToCommand(client, "%d\t%s\t\t%s\t%s\t\t%s\t%s\t\t%s\t\t%s", i, szJobWeekdayStart, szJobWeekdayEnd, szJobHourStart, szJobHourEnd, szJobMinuteStart, szJobMinuteEnd, szCronJob);
+		SC_GetCronJobFromId(iJob, iJobMinute, iJobHour, iJobDayOfTheMonth, iJobMonth, iJobDayOfTheWeek, szCronJob);
+		CronIntToString(iJobMinute, szJobMinute, sizeof(szJobMinute));
+		CronIntToString(iJobHour, szJobHour, sizeof(szJobHour));
+		CronIntToString(iJobDayOfTheMonth, szJobDayOfTheMonth, sizeof(szJobDayOfTheMonth));
+		CronIntToString(iJobMonth, szJobMonth, sizeof(szJobMonth));
+		CronIntToString(iJobDayOfTheWeek, szJobDayOfTheWeek, sizeof(szJobDayOfTheWeek));
+		ReplyToCommand(client, "%d\t%s\t%s\t%s\t\t%s\t%s\t\t%s", iJob, szJobMinute, szJobHour, szJobDayOfTheMonth, szJobMonth, szJobDayOfTheWeek, szCronJob);
 	}
 	
 	return Plugin_Handled;
 }
 
-
-stock CronStringToInt(String:szStr[])
+int CronStringToInt(char []szStr)
 {
-	if (szStr[0] == '?')
+	if (szStr[0] == JOB_WILDCARD)
 		return JOB_WILDCARD;
 	return StringToInt(szStr);
 }
 
-stock CronIntToString(iNum, String:szOutBuffer[], iOutBufferSize)
+void CronIntToString(int iNum, char []szOutBuffer, int iOutBufferSize)
 {
 	if (iNum == JOB_WILDCARD)
 	{
